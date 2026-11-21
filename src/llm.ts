@@ -67,7 +67,36 @@ export function parseJSON<T>(raw: string, schema?: ZodType<T>): T {
       ? firstObj
       : Math.min(firstObj, firstArr);
   if (start > 0) s = s.slice(start);
+  // Models also append prose after the JSON ("Let me know if..."), which
+  // JSON.parse rejects. Cut at the bracket that closes the opening one.
+  const end = closingBracketEnd(s);
+  if (end > 0) s = s.slice(0, end);
   const parsed = JSON.parse(s);
   if (schema) return schema.parse(parsed);
   return parsed as T;
+}
+
+// Index just past the bracket that closes s[0], or -1 if it never closes.
+// Brackets inside strings don't count, so trailing prose containing "]" or "}"
+// can't be mistaken for the end, and neither can a "]" inside a JSON string.
+function closingBracketEnd(s: string): number {
+  if (s[0] !== "{" && s[0] !== "[") return -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+    } else if (c === "{" || c === "[") {
+      depth++;
+    } else if ((c === "}" || c === "]") && --depth === 0) {
+      return i + 1;
+    }
+  }
+  return -1;
 }
